@@ -12,7 +12,15 @@ This way a new entity can still be enqueued while the last one is being processe
 SortedQueues are only deleted if they are empty and then get unblocked.
 
 ## Usage
+Configure your environment to use private repositories: `go env -w GOPRIVATE=github.com/otto-rmu-technology/*`
+
+Then import the package with `go get -u github.com/otto-rmu-technology/go-multiqueue`
+
 ```go
+import (
+	multiqueue "github.com/otto-rmu-technology/go-multiqueue"
+)
+
 // The test entity to be inserted
 type TestEntity struct {
     ExampleSortingProperty  string
@@ -21,7 +29,7 @@ type TestEntity struct {
 
 // Initiate the Multiqueue with desired SortingProperty
 // THe sorting property has to be a string
-mq, err := NewMultiQueue("ExampleSortingProperty")
+mq, err := multiqueue.NewMultiQueue("ExampleSortingProperty")
 if err != nil { 
 	// Handle error
 }
