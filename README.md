@@ -65,6 +65,21 @@ if err != nil {
 }
 
 // process entity2 here
+// but an error happens
+
+err = mq.UnblockWithError(entity2.DefaultSortingProperty)
+if err != nil {
+// Handle error
+}
+// entity2 is now back in the MultiQueue and it is unblocked so the failed entity can be processed again
+
+entity2, err := mq.Dequeue()
+if err != nil {
+// Handle error
+}
+
+// process entity2 here
+// no error happens now
 
 err = mq.Unblock(entity2.DefaultSortingProperty)
 if err != nil {
