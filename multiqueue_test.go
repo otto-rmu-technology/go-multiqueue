@@ -84,8 +84,12 @@ func TestMultiqueue_Integration(t *testing.T) {
 		t.Errorf("Integration test failed with wrong return value got = %v, want = %v", val, nil)
 		return
 	}
-	if len(mq.sortedQueues["B"].entities) >= 1 {
-		t.Errorf("Integration test failed with wrong sortedQueue B len got = %v, want = %v", len(mq.sortedQueues["B"].entities), 0)
+	if len(mq.sortedQueues["B"].entities) != 1 {
+		t.Errorf("Integration test failed with wrong sortedQueue B len got = %v, want = %v", len(mq.sortedQueues["B"].entities), 1)
+		return
+	}
+	if len(mq.sortedQueues["A"].entities) != 3 {
+		t.Errorf("Integration test failed with wrong sortedQueue B len got = %v, want = %v", len(mq.sortedQueues["B"].entities), 3)
 		return
 	}
 	// Unblock B queue - should be deleted then since there are no entities left
@@ -138,10 +142,10 @@ func TestMultiqueue_Integration(t *testing.T) {
 		t.Errorf("Integration test failed with unexpected return value got = %v, want = %v", respEA1, eA1)
 		return
 	}
-	// enqueue another entity while no entites left but still should exist while blocked
+	// enqueue another entity while no entities left but still should exist while blocked
 	mq.Enqueue(eA1)
-	if len(mq.sortedQueues["A"].entities) != 1 {
-		t.Errorf("Integration test failed with wrong sortedQueue A len got = %v, want = %v", len(mq.sortedQueues["A"].entities), 1)
+	if len(mq.sortedQueues["A"].entities) != 2 {
+		t.Errorf("Integration test failed with wrong sortedQueue A len got = %v, want = %v", len(mq.sortedQueues["A"].entities), 2)
 		return
 	}
 	err = mq.Unblock("A")
@@ -149,8 +153,23 @@ func TestMultiqueue_Integration(t *testing.T) {
 		t.Errorf("Integration test failed with wrong error got = %v, want = %v", err, nil)
 		return
 	}
-	// get the last entity now
+	// get the last entity now but return with error
 	respEA12, err := mq.Dequeue()
+	if err != nil {
+		t.Errorf("Integration test failed with unexpected error = %v", err)
+		return
+	}
+	if !cmp.Equal(respEA12, eA1) {
+		t.Errorf("Integration test failed with unexpected return value got = %v, want = %v", respEA1, eA1)
+		return
+	}
+	err = mq.UnblockWithError("A")
+	if err != nil {
+		t.Errorf("Integration test failed with wrong error got = %v, want = %v", err, nil)
+		return
+	}
+	// get the last entity now frfr
+	respEA12, err = mq.Dequeue()
 	if err != nil {
 		t.Errorf("Integration test failed with unexpected error = %v", err)
 		return
@@ -351,15 +370,8 @@ func TestMultiQueue_Dequeue(t *testing.T) {
 				if err1 != nil {
 					t.Errorf("Dequeue() error getting sorting property value with error = %v", err)
 				}
-				switch {
-				case len(copiedSortedQueues[sortingPropertyValue].entities) >= 2:
-					if len(m.sortedQueues[sortingPropertyValue].entities) != len(copiedSortedQueues[sortingPropertyValue].entities)-1 {
-						t.Errorf("Dequeue() len of sorted queue was not reduced with expected len = %v ; got len = %v", len(copiedSortedQueues[sortingPropertyValue].entities)-1, len(m.sortedQueues[sortingPropertyValue].entities))
-					}
-				case len(copiedSortedQueues[sortingPropertyValue].entities) <= 1:
-					if len(m.sortedQueues[sortingPropertyValue].entities) >= 1 {
-						t.Errorf("Dequeue() expected empty sorted queue but got = %v", m.sortedQueues[sortingPropertyValue].entities)
-					}
+				if len(m.sortedQueues[sortingPropertyValue].entities) != len(copiedSortedQueues[sortingPropertyValue].entities) {
+					t.Errorf("Dequeue() len of sorted queue was reduced with got = %v want = %v", copiedSortedQueues[sortingPropertyValue].entities, m.sortedQueues[sortingPropertyValue].entities)
 				}
 			}
 		})
@@ -525,6 +537,187 @@ func TestMultiQueue_Unblock(t *testing.T) {
 		sortingPropertyValue string
 	}
 	tests := []struct {
+		name            string
+		fields          fields
+		args            args
+		wantEntitiesLen int
+		wantErr         bool
+	}{
+		{
+			name: "error queue not exist",
+			fields: fields{
+				sortingProperty: "SortingProperty",
+				sortedQueues: map[string]*SortedQueue{
+					"A": {
+						entities: []SortedQueueEntity{
+							{
+								entity: TestEntity{
+									SortingProperty: "A",
+									ID:              1,
+								},
+								insertionTime: time.Date(2024, 06, 27, 11, 0, 0, 0, time.UTC),
+							},
+						},
+						oldestEntityTime: time.Date(2024, 06, 27, 11, 0, 0, 0, time.UTC),
+						isBlocked:        true,
+					},
+				},
+			},
+			args: args{
+				sortingPropertyValue: "B",
+			},
+			wantErr: true,
+		},
+		{
+			name: "error no entities in queue",
+			fields: fields{
+				sortingProperty: "SortingProperty",
+				sortedQueues: map[string]*SortedQueue{
+					"A": {
+						entities:         []SortedQueueEntity{},
+						oldestEntityTime: time.Date(2024, 06, 27, 11, 0, 0, 0, time.UTC),
+						isBlocked:        true,
+					},
+				},
+			},
+			args: args{
+				sortingPropertyValue: "A",
+			},
+			wantErr: true,
+		},
+		{
+			name: "error queue already unblocked",
+			fields: fields{
+				sortingProperty: "SortingProperty",
+				sortedQueues: map[string]*SortedQueue{
+					"A": {
+						entities: []SortedQueueEntity{
+							{
+								entity: TestEntity{
+									SortingProperty: "A",
+									ID:              1,
+								},
+								insertionTime: time.Date(2024, 06, 27, 11, 0, 0, 0, time.UTC),
+							},
+						},
+						oldestEntityTime: time.Date(2024, 06, 27, 11, 0, 0, 0, time.UTC),
+						isBlocked:        false,
+					},
+				},
+			},
+			args: args{
+				sortingPropertyValue: "A",
+			},
+			wantErr: true,
+		},
+		{
+			name: "happy case with queue deleted",
+			fields: fields{
+				sortingProperty: "SortingProperty",
+				sortedQueues: map[string]*SortedQueue{
+					"A": {
+						entities: []SortedQueueEntity{
+							{
+								entity: TestEntity{
+									SortingProperty: "A",
+									ID:              1,
+								},
+								insertionTime: time.Date(2024, 06, 27, 11, 0, 0, 0, time.UTC),
+							},
+						},
+						oldestEntityTime: time.Date(2024, 06, 27, 11, 0, 0, 0, time.UTC),
+						isBlocked:        true,
+					},
+				},
+			},
+			args: args{
+				sortingPropertyValue: "A",
+			},
+			wantErr: false,
+		},
+		{
+			name: "happy case with queue existing going forward",
+			fields: fields{
+				sortingProperty: "SortingProperty",
+				sortedQueues: map[string]*SortedQueue{
+					"A": {
+						entities: []SortedQueueEntity{
+							{
+								entity: TestEntity{
+									SortingProperty: "A",
+									ID:              1,
+								},
+								insertionTime: time.Date(2024, 06, 26, 11, 00, 0, 0, time.UTC),
+							},
+							{
+								entity: TestEntity{
+									SortingProperty: "A",
+									ID:              2,
+								},
+								insertionTime: time.Date(2024, 06, 26, 11, 00, 12, 0, time.UTC),
+							},
+							{
+								entity: TestEntity{
+									SortingProperty: "A",
+									ID:              3,
+								},
+								insertionTime: time.Date(2024, 06, 26, 11, 00, 15, 0, time.UTC),
+							},
+							{
+								entity: TestEntity{
+									SortingProperty: "A",
+									ID:              4,
+								},
+								insertionTime: time.Date(2024, 06, 26, 11, 00, 18, 0, time.UTC),
+							},
+						},
+						oldestEntityTime: time.Date(2024, 06, 27, 11, 0, 0, 0, time.UTC),
+						isBlocked:        true,
+					},
+				},
+			},
+			args: args{
+				sortingPropertyValue: "A",
+			},
+			wantEntitiesLen: 3,
+			wantErr:         false,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			m := &MultiQueue{
+				sortingProperty: tt.fields.sortingProperty,
+				sortedQueues:    tt.fields.sortedQueues,
+				mu:              sync.Mutex{},
+			}
+			if err := m.Unblock(tt.args.sortingPropertyValue); (err != nil) != tt.wantErr {
+				t.Errorf("Unblock() error = %v, wantErr %v", err, tt.wantErr)
+				return
+			}
+			_, okay := m.sortedQueues[tt.args.sortingPropertyValue]
+			if okay {
+				if !tt.wantErr && m.sortedQueues[tt.args.sortingPropertyValue].isBlocked {
+					t.Errorf("Unblock() for sorting property value = %v got = %v, want false", tt.args.sortingPropertyValue, m.sortedQueues[tt.args.sortingPropertyValue].isBlocked)
+					return
+				}
+				if len(m.sortedQueues[tt.args.sortingPropertyValue].entities) != tt.wantEntitiesLen && !tt.wantErr {
+					t.Errorf("Unblock() entities were not altered got = %v with len =%v, want len %v", m.sortedQueues[tt.args.sortingPropertyValue].entities, len(m.sortedQueues[tt.args.sortingPropertyValue].entities), tt.wantEntitiesLen)
+					return
+				}
+			}
+		})
+	}
+}
+
+func TestMultiQueue_UnblockWithError(t *testing.T) {
+	type fields struct {
+		sortingProperty string
+		sortedQueues    map[string]*SortedQueue
+	}
+	type args struct {
+		sortingPropertyValue string
+	}
+	tests := []struct {
 		name    string
 		fields  fields
 		args    args
@@ -581,24 +774,7 @@ func TestMultiQueue_Unblock(t *testing.T) {
 			wantErr: true,
 		},
 		{
-			name: "happy case with queue deleted",
-			fields: fields{
-				sortingProperty: "SortingProperty",
-				sortedQueues: map[string]*SortedQueue{
-					"A": {
-						entities:         []SortedQueueEntity{},
-						oldestEntityTime: time.Date(2024, 06, 27, 11, 0, 0, 0, time.UTC),
-						isBlocked:        true,
-					},
-				},
-			},
-			args: args{
-				sortingPropertyValue: "A",
-			},
-			wantErr: false,
-		},
-		{
-			name: "happy case with queue existing going forward",
+			name: "happy case with entity still in queue",
 			fields: fields{
 				sortingProperty: "SortingProperty",
 				sortedQueues: map[string]*SortedQueue{
@@ -609,7 +785,28 @@ func TestMultiQueue_Unblock(t *testing.T) {
 									SortingProperty: "A",
 									ID:              1,
 								},
-								insertionTime: time.Date(2024, 06, 27, 11, 0, 0, 0, time.UTC),
+								insertionTime: time.Date(2024, 06, 26, 11, 00, 0, 0, time.UTC),
+							},
+							{
+								entity: TestEntity{
+									SortingProperty: "A",
+									ID:              2,
+								},
+								insertionTime: time.Date(2024, 06, 26, 11, 00, 12, 0, time.UTC),
+							},
+							{
+								entity: TestEntity{
+									SortingProperty: "A",
+									ID:              3,
+								},
+								insertionTime: time.Date(2024, 06, 26, 11, 00, 15, 0, time.UTC),
+							},
+							{
+								entity: TestEntity{
+									SortingProperty: "A",
+									ID:              4,
+								},
+								insertionTime: time.Date(2024, 06, 26, 11, 00, 18, 0, time.UTC),
 							},
 						},
 						oldestEntityTime: time.Date(2024, 06, 27, 11, 0, 0, 0, time.UTC),
@@ -630,13 +827,24 @@ func TestMultiQueue_Unblock(t *testing.T) {
 				sortedQueues:    tt.fields.sortedQueues,
 				mu:              sync.Mutex{},
 			}
-			if err := m.Unblock(tt.args.sortingPropertyValue); (err != nil) != tt.wantErr {
-				t.Errorf("Unblock() error = %v, wantErr %v", err, tt.wantErr)
-			}
+
+			copiedEntities := []SortedQueueEntity{}
 			_, okay := m.sortedQueues[tt.args.sortingPropertyValue]
 			if okay {
+				copiedEntities = m.sortedQueues[tt.args.sortingPropertyValue].entities
+			}
+
+			if err := m.UnblockWithError(tt.args.sortingPropertyValue); (err != nil) != tt.wantErr {
+				t.Errorf("UnblockWithError() error = %v, wantErr %v", err, tt.wantErr)
+				return
+			}
+			if okay {
 				if !tt.wantErr && m.sortedQueues[tt.args.sortingPropertyValue].isBlocked {
-					t.Errorf("Unblock() for sorting property value = %v got = %v, want false", tt.args.sortingPropertyValue, m.sortedQueues[tt.args.sortingPropertyValue].isBlocked)
+					t.Errorf("UnblockWithError() for sorting property value = %v got = %v, want false", tt.args.sortingPropertyValue, m.sortedQueues[tt.args.sortingPropertyValue].isBlocked)
+					return
+				}
+				if len(m.sortedQueues[tt.args.sortingPropertyValue].entities) != len(copiedEntities) && !tt.wantErr {
+					t.Errorf("UnblockWithError() entities were altered got = %v, want %v", m.sortedQueues[tt.args.sortingPropertyValue].entities, copiedEntities)
 				}
 			}
 		})
@@ -1230,7 +1438,6 @@ func TestSortedQueue_dequeue(t *testing.T) {
 	tests := []struct {
 		name    string
 		fields  fields
-		want    any
 		wantErr bool
 	}{
 		{
@@ -1240,11 +1447,10 @@ func TestSortedQueue_dequeue(t *testing.T) {
 				oldestEntityTime: time.Time{},
 				isBlocked:        false,
 			},
-			want:    nil,
 			wantErr: true,
 		},
 		{
-			name: "get last entity expect no error",
+			name: "dequeue last entity expect no error",
 			fields: fields{
 				entities: []SortedQueueEntity{
 					{
@@ -1258,14 +1464,10 @@ func TestSortedQueue_dequeue(t *testing.T) {
 				oldestEntityTime: time.Date(2024, 06, 26, 11, 00, 0, 0, time.UTC),
 				isBlocked:        false,
 			},
-			want: TestEntity{
-				SortingProperty: "A",
-				ID:              1,
-			},
 			wantErr: false,
 		},
 		{
-			name: "get one entity expect no error",
+			name: "dequeue one entity expect no error",
 			fields: fields{
 				entities: []SortedQueueEntity{
 					{
@@ -1282,13 +1484,23 @@ func TestSortedQueue_dequeue(t *testing.T) {
 						},
 						insertionTime: time.Date(2024, 06, 26, 11, 00, 12, 0, time.UTC),
 					},
+					{
+						entity: TestEntity{
+							SortingProperty: "A",
+							ID:              3,
+						},
+						insertionTime: time.Date(2024, 06, 26, 11, 00, 15, 0, time.UTC),
+					},
+					{
+						entity: TestEntity{
+							SortingProperty: "A",
+							ID:              4,
+						},
+						insertionTime: time.Date(2024, 06, 26, 11, 00, 18, 0, time.UTC),
+					},
 				},
 				oldestEntityTime: time.Date(2024, 06, 26, 11, 00, 0, 0, time.UTC),
 				isBlocked:        false,
-			},
-			want: TestEntity{
-				SortingProperty: "A",
-				ID:              1,
 			},
 			wantErr: false,
 		},
@@ -1300,13 +1512,19 @@ func TestSortedQueue_dequeue(t *testing.T) {
 				oldestEntityTime: tt.fields.oldestEntityTime,
 				isBlocked:        tt.fields.isBlocked,
 			}
-			got, err := s.dequeue()
+
+			err := s.dequeue()
 			if (err != nil) != tt.wantErr {
 				t.Errorf("dequeue() error = %v, wantErr %v", err, tt.wantErr)
 				return
 			}
-			if !cmp.Equal(got, tt.want) {
-				t.Errorf("dequeue() got = %v, want %v with diff = %v", got, tt.want, cmp.Diff(got, tt.want))
+			if len(s.entities) == len(tt.fields.entities) && !tt.wantErr {
+				t.Errorf("dequeue() entities were not altered got = %v, want %v", s.entities, tt.fields.entities)
+			}
+			if len(s.entities) >= 1 {
+				if tt.fields.entities[0].insertionTime.Equal(s.oldestEntityTime) {
+					t.Errorf("dequeue() insertion time was not altered got = %v, want %v", s.oldestEntityTime, tt.fields.entities[0].insertionTime)
+				}
 			}
 		})
 	}
@@ -1469,6 +1687,97 @@ func TestSortedQueue_unblock(t *testing.T) {
 			}
 			if err := s.unblock(); (err != nil) != tt.wantErr {
 				t.Errorf("unblock() error = %v, wantErr %v", err, tt.wantErr)
+			}
+		})
+	}
+}
+
+func TestSortedQueue_getNextEntity(t *testing.T) {
+	type fields struct {
+		entities         []SortedQueueEntity
+		oldestEntityTime time.Time
+		isBlocked        bool
+	}
+	tests := []struct {
+		name    string
+		fields  fields
+		want    any
+		wantErr bool
+	}{
+		{
+			name: "empty queue expect ErrNoEntitiesInQueueError",
+			fields: fields{
+				entities:         nil,
+				oldestEntityTime: time.Time{},
+				isBlocked:        false,
+			},
+			want:    nil,
+			wantErr: true,
+		},
+		{
+			name: "get last entity expect no error",
+			fields: fields{
+				entities: []SortedQueueEntity{
+					{
+						entity: TestEntity{
+							SortingProperty: "A",
+							ID:              1,
+						},
+						insertionTime: time.Date(2024, 06, 26, 11, 00, 0, 0, time.UTC),
+					},
+				},
+				oldestEntityTime: time.Date(2024, 06, 26, 11, 00, 0, 0, time.UTC),
+				isBlocked:        false,
+			},
+			want: TestEntity{
+				SortingProperty: "A",
+				ID:              1,
+			},
+			wantErr: false,
+		},
+		{
+			name: "get next entity expect no error",
+			fields: fields{
+				entities: []SortedQueueEntity{
+					{
+						entity: TestEntity{
+							SortingProperty: "A",
+							ID:              1,
+						},
+						insertionTime: time.Date(2024, 06, 26, 11, 00, 0, 0, time.UTC),
+					},
+					{
+						entity: TestEntity{
+							SortingProperty: "A",
+							ID:              2,
+						},
+						insertionTime: time.Date(2024, 06, 26, 11, 00, 12, 0, time.UTC),
+					},
+				},
+				oldestEntityTime: time.Date(2024, 06, 26, 11, 00, 0, 0, time.UTC),
+				isBlocked:        false,
+			},
+			want: TestEntity{
+				SortingProperty: "A",
+				ID:              1,
+			},
+			wantErr: false,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			s := &SortedQueue{
+				entities:         tt.fields.entities,
+				oldestEntityTime: tt.fields.oldestEntityTime,
+				isBlocked:        tt.fields.isBlocked,
+			}
+			got, err := s.getNextEntity()
+			if (err != nil) != tt.wantErr {
+				t.Errorf("getNextEntity() error = %v, wantErr %v", err, tt.wantErr)
+				return
+			}
+			if !cmp.Equal(got, tt.want) {
+				t.Errorf("getNextEntity() got = %v, want %v with diff = %v", got, tt.want, cmp.Diff(got, tt.want))
 			}
 		})
 	}

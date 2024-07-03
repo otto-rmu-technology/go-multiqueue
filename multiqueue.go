@@ -57,6 +57,7 @@ func NewMultiQueue(sortingProperty string) (*MultiQueue, error) {
 }
 
 // Dequeue dequeues an entity from the SortedQueue with the oldest entity.
+// The SortedQueue will only be altered when unblocking.
 func (m *MultiQueue) Dequeue() (any, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -66,12 +67,8 @@ func (m *MultiQueue) Dequeue() (any, error) {
 		return nil, err
 	}
 
-	entity, err := sortedQueue.dequeue()
+	entity, err := sortedQueue.getNextEntity()
 	if err != nil {
-		return nil, err
-	}
-	switch {
-	case err != nil:
 		return nil, err
 	}
 
@@ -101,7 +98,7 @@ func (m *MultiQueue) Enqueue(e any) error {
 
 // Unblock should be called when an entity was dequeued, otherwise the SortedQueue will be blocked forever.
 // Unblocks a SortingQueue after the event for the entity was successfully handled.
-// If the sorted queue is empty when trying to unblock if will get deleted.
+// If the sorted queue is empty when trying to unblock it will get deleted.
 func (m *MultiQueue) Unblock(sortingPropertyValue string) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -110,11 +107,48 @@ func (m *MultiQueue) Unblock(sortingPropertyValue string) error {
 	if !ok {
 		return ErrSortedQueueNotFoundError
 	}
+	if !m.sortedQueues[sortingPropertyValue].isBlocked {
+		return ErrSortedQueueAlreadyUnblockedError
+	}
+
+	// delete the last entity from queue
+	err := m.sortedQueues[sortingPropertyValue].dequeue()
+	if err != nil {
+		return err
+	}
+
 	// delete if no entities are there anymore
 	if len(m.sortedQueues[sortingPropertyValue].entities) <= 0 {
 		delete(m.sortedQueues, sortingPropertyValue)
 		return nil
 	}
+
+	err = m.sortedQueues[sortingPropertyValue].unblock()
+	if err != nil {
+		return err
+	}
+
+	return nil
+}
+
+// UnblockWithError should be called when an entity was dequeued but an error happened while processing otherwise the SortedQueue will be blocked forever.
+// This way the entity will be pushed back to the front of the queue, so that the event can be handled again.
+// This is not optimal, but it keeps the integrity of the events.
+// Worst case is, that the event get tried to handle over and over again and always fails, still this gives you time to fix the problem while the sorted queue is in an endless loop.
+// This potentially blocks the whole MultiQueue if only one entity is dequeued and processed at a time.
+func (m *MultiQueue) UnblockWithError(sortingPropertyValue string) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	_, ok := m.sortedQueues[sortingPropertyValue]
+	if !ok {
+		return ErrSortedQueueNotFoundError
+	}
+	if !m.sortedQueues[sortingPropertyValue].isBlocked {
+		return ErrSortedQueueAlreadyUnblockedError
+	}
+
+	// there is nothing dequeued or deleted here, since the entity should remain in the queue to be dequeued again
 
 	err := m.sortedQueues[sortingPropertyValue].unblock()
 	if err != nil {
@@ -211,20 +245,30 @@ func (s *SortedQueue) enqueue(e any, ts time.Time) {
 	s.entities = append(s.entities, sortedQueueEntity)
 }
 
-// dequeue dequeues an entity from a SortedQueue.
-func (s *SortedQueue) dequeue() (any, error) {
+// getNextEntity gets the next entity of the queue without deleting it from the queue.
+func (s *SortedQueue) getNextEntity() (any, error) {
 	if len(s.entities) == 0 {
 		return nil, ErrNoEntitiesInQueueError
 	}
 	sortedQueueEntity := s.entities[0]
+
+	return sortedQueueEntity.entity, nil
+}
+
+// dequeue deletes the next entity from a SortedQueue.
+// The reading of the element, which is deleted from the queue here, happens in getNextEntity.
+func (s *SortedQueue) dequeue() error {
+	if len(s.entities) == 0 {
+		return ErrNoEntitiesInQueueError
+	}
 	s.entities = s.entities[1:]
 
 	if len(s.entities) == 0 {
-		return sortedQueueEntity.entity, nil
+		return nil
 	}
 
-	s.oldestEntityTime = s.entities[len(s.entities)-1].insertionTime
-	return sortedQueueEntity.entity, nil
+	s.oldestEntityTime = s.entities[0].insertionTime
+	return nil
 }
 
 // block blocks a SortedQueue.
