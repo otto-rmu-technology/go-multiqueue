@@ -8,12 +8,12 @@ import (
 )
 
 var (
-	ErrEmptySortingPropertyValueError            = errors.New("error: given entity has empty sorting property value")
-	ErrEntityNotAStructError                     = errors.New("error: given entity is not a struct")
-	ErrSortingPropertyNotExistOrNotExportedError = errors.New("error: given entity doesn't contain required sorting property or not exported")
-	ErrSortingPropertyNotAStringError            = errors.New("error: given entity is not a string")
-	ErrNoUnblockedQueueFoundError                = errors.New("error: no queue was found which is unblocked and contains entities")
-	ErrNoEntitiesInQueueError                    = errors.New("error: no entities were found in queue")
+	ErrEmptySortingPropertyValueError            = errors.New("error: given Entity has empty sorting property value")
+	ErrEntityNotAStructError                     = errors.New("error: given Entity is not a struct")
+	ErrSortingPropertyNotExistOrNotExportedError = errors.New("error: given Entity doesn't contain required sorting property or not exported")
+	ErrSortingPropertyNotAStringError            = errors.New("error: given Entity is not a string")
+	ErrNoUnblockedQueueFoundError                = errors.New("error: no queue was found which is unblocked and contains Entities")
+	ErrNoEntitiesInQueueError                    = errors.New("error: no Entities were found in queue")
 	ErrSortedQueueAlreadyBlockedError            = errors.New("error: sorted queue is already blocked")
 	ErrSortedQueueAlreadyUnblockedError          = errors.New("error: sorted queue is already unblocked")
 	ErrSortedQueueNotFoundError                  = errors.New("error: sorted queue not exist")
@@ -21,27 +21,27 @@ var (
 )
 
 type MultiQueue struct {
-	sortingProperty string
-	sortedQueues    map[string]*SortedQueue
+	SortingProperty string
+	SortedQueues    map[string]*SortedQueue
 	mu              sync.Mutex
 }
 
 type SortedQueue struct {
-	entities         []SortedQueueEntity
-	oldestEntityTime time.Time
-	isBlocked        bool
+	Entities         []SortedQueueEntity
+	OldestEntityTime time.Time
+	IsBlocked        bool
 }
 
 type SortedQueueEntity struct {
-	entity        any
-	insertionTime time.Time
+	Entity        any
+	InsertionTime time.Time
 }
 
 func NewSortedQueue() *SortedQueue {
 	return &SortedQueue{
-		entities:         []SortedQueueEntity{},
-		oldestEntityTime: time.Time{},
-		isBlocked:        false,
+		Entities:         []SortedQueueEntity{},
+		OldestEntityTime: time.Time{},
+		IsBlocked:        false,
 	}
 }
 
@@ -51,12 +51,12 @@ func NewMultiQueue(sortingProperty string) (*MultiQueue, error) {
 	}
 
 	return &MultiQueue{
-		sortingProperty: sortingProperty,
-		sortedQueues:    map[string]*SortedQueue{},
+		SortingProperty: sortingProperty,
+		SortedQueues:    map[string]*SortedQueue{},
 	}, nil
 }
 
-// Dequeue dequeues an entity from the SortedQueue with the oldest entity.
+// Dequeue dequeues an Entity from the SortedQueue with the oldest Entity.
 // The SortedQueue will only be altered when unblocking.
 func (m *MultiQueue) Dequeue() (any, error) {
 	m.mu.Lock()
@@ -75,7 +75,7 @@ func (m *MultiQueue) Dequeue() (any, error) {
 	return entity, nil
 }
 
-// Enqueue checks if the sorting property is present and enqueues the entity to the correct SortedQueue.
+// Enqueue checks if the sorting property is present and enqueues the Entity to the correct SortedQueue.
 func (m *MultiQueue) Enqueue(e any) error {
 	ts := time.Now()
 
@@ -96,34 +96,34 @@ func (m *MultiQueue) Enqueue(e any) error {
 	return nil
 }
 
-// Unblock should be called when an entity was dequeued, otherwise the SortedQueue will be blocked forever.
-// Unblocks a SortingQueue after the event for the entity was successfully handled.
+// Unblock should be called when an Entity was dequeued, otherwise the SortedQueue will be blocked forever.
+// Unblocks a SortingQueue after the event for the Entity was successfully handled.
 // If the sorted queue is empty when trying to unblock it will get deleted.
 func (m *MultiQueue) Unblock(sortingPropertyValue string) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
-	_, ok := m.sortedQueues[sortingPropertyValue]
+	_, ok := m.SortedQueues[sortingPropertyValue]
 	if !ok {
 		return ErrSortedQueueNotFoundError
 	}
-	if !m.sortedQueues[sortingPropertyValue].isBlocked {
+	if !m.SortedQueues[sortingPropertyValue].IsBlocked {
 		return ErrSortedQueueAlreadyUnblockedError
 	}
 
-	// delete the last entity from queue
-	err := m.sortedQueues[sortingPropertyValue].dequeue()
+	// delete the last Entity from queue
+	err := m.SortedQueues[sortingPropertyValue].dequeue()
 	if err != nil {
 		return err
 	}
 
-	// delete if no entities are there anymore
-	if len(m.sortedQueues[sortingPropertyValue].entities) <= 0 {
-		delete(m.sortedQueues, sortingPropertyValue)
+	// delete if no Entities are there anymore
+	if len(m.SortedQueues[sortingPropertyValue].Entities) <= 0 {
+		delete(m.SortedQueues, sortingPropertyValue)
 		return nil
 	}
 
-	err = m.sortedQueues[sortingPropertyValue].unblock()
+	err = m.SortedQueues[sortingPropertyValue].unblock()
 	if err != nil {
 		return err
 	}
@@ -131,26 +131,26 @@ func (m *MultiQueue) Unblock(sortingPropertyValue string) error {
 	return nil
 }
 
-// UnblockWithError should be called when an entity was dequeued but an error happened while processing otherwise the SortedQueue will be blocked forever.
-// This way the entity will be pushed back to the front of the queue, so that the event can be handled again.
+// UnblockWithError should be called when an Entity was dequeued but an error happened while processing otherwise the SortedQueue will be blocked forever.
+// This way the Entity will be pushed back to the front of the queue, so that the event can be handled again.
 // This is not optimal, but it keeps the integrity of the events.
 // Worst case is, that the event get tried to handle over and over again and always fails, still this gives you time to fix the problem while the sorted queue is in an endless loop.
-// This potentially blocks the whole MultiQueue if only one entity is dequeued and processed at a time.
+// This potentially blocks the whole MultiQueue if only one Entity is dequeued and processed at a time.
 func (m *MultiQueue) UnblockWithError(sortingPropertyValue string) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
-	_, ok := m.sortedQueues[sortingPropertyValue]
+	_, ok := m.SortedQueues[sortingPropertyValue]
 	if !ok {
 		return ErrSortedQueueNotFoundError
 	}
-	if !m.sortedQueues[sortingPropertyValue].isBlocked {
+	if !m.SortedQueues[sortingPropertyValue].IsBlocked {
 		return ErrSortedQueueAlreadyUnblockedError
 	}
 
-	// there is nothing dequeued or deleted here, since the entity should remain in the queue to be dequeued again
+	// there is nothing dequeued or deleted here, since the Entity should remain in the queue to be dequeued again
 
-	err := m.sortedQueues[sortingPropertyValue].unblock()
+	err := m.SortedQueues[sortingPropertyValue].unblock()
 	if err != nil {
 		return err
 	}
@@ -158,17 +158,17 @@ func (m *MultiQueue) UnblockWithError(sortingPropertyValue string) error {
 	return nil
 }
 
-// getSortingPropertyValue checks if the required property to sort the entity exists.
+// getSortingPropertyValue checks if the required property to sort the Entity exists.
 // If yes the value is returned else ErrNoSortingPropertyError is returned.
 func (m *MultiQueue) getSortingPropertyValue(e any) (string, error) {
 	value := reflect.ValueOf(e)
-	// check if entity is a struct
+	// check if Entity is a struct
 	if value.Kind() != reflect.Struct {
 		return "", ErrEntityNotAStructError
 	}
 
 	// get sorting property by name
-	fieldValue := value.FieldByName(m.sortingProperty)
+	fieldValue := value.FieldByName(m.SortingProperty)
 
 	// check if the field exists and is exported
 	if !fieldValue.IsValid() || !fieldValue.CanInterface() {
@@ -195,96 +195,96 @@ func (m *MultiQueue) getSortedQueue(sortingPropertyValue string) (*SortedQueue, 
 	if sortingPropertyValue == "" {
 		return nil, ErrEmptySortingPropertyValueError
 	}
-	sortedQueue, ok := m.sortedQueues[sortingPropertyValue]
+	sortedQueue, ok := m.SortedQueues[sortingPropertyValue]
 	// If the sortedQueue not exists
 	if !ok {
-		m.sortedQueues[sortingPropertyValue] = NewSortedQueue()
-		sortedQueue = m.sortedQueues[sortingPropertyValue]
+		m.SortedQueues[sortingPropertyValue] = NewSortedQueue()
+		sortedQueue = m.SortedQueues[sortingPropertyValue]
 	}
 
 	return sortedQueue, nil
 }
 
-// getNonBlockedSortedQueueWithOldestEntity gets the SortedQueue with the oldest entity where the SortedQueue is not blocked.
+// getNonBlockedSortedQueueWithOldestEntity gets the SortedQueue with the oldest Entity where the SortedQueue is not blocked.
 // This is for dequeue purposes.
 func (m *MultiQueue) getNonBlockedSortedQueueWithOldestEntity() (*SortedQueue, error) {
 	oldestTimestamp := time.Unix(0, 0)
 	oldestSortedQueueKey := ""
 
-	for sortedQueueKey, _ := range m.sortedQueues {
-		if m.sortedQueues[sortedQueueKey].oldestEntityTime.After(oldestTimestamp) && !oldestTimestamp.Equal(time.Unix(0, 0)) {
+	for sortedQueueKey, _ := range m.SortedQueues {
+		if m.SortedQueues[sortedQueueKey].OldestEntityTime.After(oldestTimestamp) && !oldestTimestamp.Equal(time.Unix(0, 0)) {
 			continue
 		}
-		if m.sortedQueues[sortedQueueKey].isBlocked {
+		if m.SortedQueues[sortedQueueKey].IsBlocked {
 			continue
 		}
-		oldestTimestamp = m.sortedQueues[sortedQueueKey].oldestEntityTime
+		oldestTimestamp = m.SortedQueues[sortedQueueKey].OldestEntityTime
 		oldestSortedQueueKey = sortedQueueKey
 	}
 	if oldestSortedQueueKey == "" {
 		return nil, ErrNoUnblockedQueueFoundError
 	}
-	err := m.sortedQueues[oldestSortedQueueKey].block()
+	err := m.SortedQueues[oldestSortedQueueKey].block()
 	if err != nil {
 		return nil, err
 	}
-	return m.sortedQueues[oldestSortedQueueKey], nil
+	return m.SortedQueues[oldestSortedQueueKey], nil
 }
 
-// enqueue enqueues an entity to a SortedQueue.
+// enqueue enqueues an Entity to a SortedQueue.
 func (s *SortedQueue) enqueue(e any, ts time.Time) {
 	sortedQueueEntity := SortedQueueEntity{
-		entity:        e,
-		insertionTime: ts,
+		Entity:        e,
+		InsertionTime: ts,
 	}
 
-	if len(s.entities) == 0 {
-		s.oldestEntityTime = ts
+	if len(s.Entities) == 0 {
+		s.OldestEntityTime = ts
 	}
 
-	s.entities = append(s.entities, sortedQueueEntity)
+	s.Entities = append(s.Entities, sortedQueueEntity)
 }
 
-// getNextEntity gets the next entity of the queue without deleting it from the queue.
+// getNextEntity gets the next Entity of the queue without deleting it from the queue.
 func (s *SortedQueue) getNextEntity() (any, error) {
-	if len(s.entities) == 0 {
+	if len(s.Entities) == 0 {
 		return nil, ErrNoEntitiesInQueueError
 	}
-	sortedQueueEntity := s.entities[0]
+	sortedQueueEntity := s.Entities[0]
 
-	return sortedQueueEntity.entity, nil
+	return sortedQueueEntity.Entity, nil
 }
 
-// dequeue deletes the next entity from a SortedQueue.
+// dequeue deletes the next Entity from a SortedQueue.
 // The reading of the element, which is deleted from the queue here, happens in getNextEntity.
 func (s *SortedQueue) dequeue() error {
-	if len(s.entities) == 0 {
+	if len(s.Entities) == 0 {
 		return ErrNoEntitiesInQueueError
 	}
-	s.entities = s.entities[1:]
+	s.Entities = s.Entities[1:]
 
-	if len(s.entities) == 0 {
+	if len(s.Entities) == 0 {
 		return nil
 	}
 
-	s.oldestEntityTime = s.entities[0].insertionTime
+	s.OldestEntityTime = s.Entities[0].InsertionTime
 	return nil
 }
 
 // block blocks a SortedQueue.
 func (s *SortedQueue) block() error {
-	if s.isBlocked {
+	if s.IsBlocked {
 		return ErrSortedQueueAlreadyBlockedError
 	}
-	s.isBlocked = true
+	s.IsBlocked = true
 	return nil
 }
 
 // unblock unblocks a SortedQueue.
 func (s *SortedQueue) unblock() error {
-	if !s.isBlocked {
+	if !s.IsBlocked {
 		return ErrSortedQueueAlreadyUnblockedError
 	}
-	s.isBlocked = false
+	s.IsBlocked = false
 	return nil
 }
