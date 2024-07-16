@@ -13,6 +13,12 @@ type TestEntity struct {
 	ID              int
 }
 
+type TestTimeEntity struct {
+	SortingProperty string
+	ID              int
+	Time            time.Time
+}
+
 func TestMultiqueue_Integration(t *testing.T) {
 	testVars := struct {
 		sortingProperty string
@@ -1778,6 +1784,129 @@ func TestSortedQueue_getNextEntity(t *testing.T) {
 			}
 			if !cmp.Equal(got, tt.want) {
 				t.Errorf("getNextEntity() got = %v, want %v with diff = %v", got, tt.want, cmp.Diff(got, tt.want))
+			}
+		})
+	}
+}
+
+func TestMultiQueue_GetDebugContent(t *testing.T) {
+	type fields struct {
+		SortingProperty string
+		SortedQueues    map[string]*SortedQueue
+	}
+	tests := []struct {
+		name   string
+		fields fields
+		want   map[string][]string
+	}{
+		{
+			name: "happy case ",
+			fields: fields{
+				SortingProperty: "test",
+				SortedQueues: map[string]*SortedQueue{
+					"Test1": {
+						Entities: []SortedQueueEntity{
+							{
+								Entity: TestEntity{
+									SortingProperty: "A",
+									ID:              1,
+								},
+							},
+						},
+					},
+				},
+			},
+			want: map[string][]string{
+				"Test1": {
+					`{"SortingProperty":"A","ID":1}`,
+				},
+			},
+		},
+		{
+			name: "happy case 1",
+			fields: fields{
+				SortingProperty: "test",
+				SortedQueues: map[string]*SortedQueue{
+					"Test1": {
+						Entities: []SortedQueueEntity{
+							{
+								Entity: TestEntity{
+									SortingProperty: "A",
+									ID:              1,
+								},
+							},
+						},
+					},
+					"Test2": {
+						Entities: []SortedQueueEntity{
+							{
+								Entity: TestEntity{
+									SortingProperty: "B",
+									ID:              1,
+								},
+							},
+							{
+								Entity: TestEntity{
+									SortingProperty: "B",
+									ID:              2,
+								},
+							},
+						},
+					},
+				},
+			},
+			want: map[string][]string{
+				"Test1": {
+					`{"SortingProperty":"A","ID":1}`,
+				},
+				"Test2": {
+					`{"SortingProperty":"B","ID":1}`,
+					`{"SortingProperty":"B","ID":2}`,
+				},
+			},
+		},
+		{
+			name: "happy case with time property",
+			fields: fields{
+				SortingProperty: "test",
+				SortedQueues: map[string]*SortedQueue{
+					"Test1": {
+						Entities: []SortedQueueEntity{
+							{
+								Entity: TestTimeEntity{
+									SortingProperty: "A",
+									ID:              1,
+									Time:            time.Date(2024, 05, 15, 14, 20, 0, 0, time.UTC),
+								},
+							},
+						},
+					},
+				},
+			},
+			want: map[string][]string{
+				"Test1": {
+					`{"SortingProperty":"A","ID":1,"Time":"2024-05-15T14:20:00Z"}`,
+				},
+			},
+		},
+		{
+			name: "happy case empty sorted queue",
+			fields: fields{
+				SortingProperty: "test",
+				SortedQueues:    map[string]*SortedQueue{},
+			},
+			want: map[string][]string{},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			m := &MultiQueue{
+				SortingProperty: tt.fields.SortingProperty,
+				SortedQueues:    tt.fields.SortedQueues,
+				mu:              sync.Mutex{},
+			}
+			if got := m.GetDebugContent(); !cmp.Equal(got, tt.want) {
+				t.Errorf("GetDebugContent() = %v, want %v, with diff = %v", got, tt.want, cmp.Diff(got, tt.want))
 			}
 		})
 	}

@@ -59,6 +59,9 @@ if err != nil {
 	// Handle error
 }
 
+// log the content / state of the MultiQueue
+log.Println(fmt.Sprintf("logging current state with content = %v", mq.GetDebugContent()))
+
 entity2, err := mq.Dequeue()
 if err != nil {
 // Handle error
