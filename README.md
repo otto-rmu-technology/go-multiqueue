@@ -3,8 +3,8 @@
 A go-multiqueue sorts enqueued entities into an underlying SortedQueues sorted by a defined sorting property.
 This way e.g. database events of different entities can be stored in separate queues and won't be run in parallel, while events of different entities can run in parallel.
 
-A go-multiqueue is thread safe and will be locked by a mutex upon `Enqueue`, `Dequeue` or `Unblock`.
-The underlying SortedQueues will be blocked upon `Dequeue` and unblocked upon `Unblock`.
+A go-multiqueue is thread safe and will be locked by a mutex upon `Enqueue`, `Dequeue`, `Unblock`, `UnblockWithError` or `GetDebugContent`.
+The underlying SortedQueues will be blocked upon `Dequeue` and unblocked upon `Unblock` or `UnblockWithError`.
 This way an entity can be dequeued, handled by the post processor, and then get unblocked when the processing is finished.
 
 When the last entity of a SortedQueue is dequeued the SortedQueue is held alive without queued entities.
@@ -12,9 +12,7 @@ This way a new entity can still be enqueued while the last one is being processe
 SortedQueues are only deleted if they are empty and then get unblocked.
 
 ## Usage
-Configure your environment to use private repositories: `go env -w GOPRIVATE=github.com/otto-rmu-technology/*`
-
-Then import the package with `go get -u github.com/otto-rmu-technology/go-multiqueue`
+Import the package with `go get -u github.com/otto-rmu-technology/go-multiqueue`
 
 ```go
 import (
