@@ -1,8 +1,10 @@
 package go_multiqueue
 
 import (
+	"encoding/json"
 	"errors"
 	"reflect"
+	"strconv"
 	"sync"
 	"time"
 )
@@ -156,6 +158,30 @@ func (m *MultiQueue) UnblockWithError(sortingPropertyValue string) error {
 	}
 
 	return nil
+}
+
+// GetDebugContent returns a map of the content of the multiqueue for debugging or logging purposes.
+// GetDebugContent is threadsafe.
+// When an error occurs during string conversion the iterator int will be printed to the slice, so the number of elements wil be correct but the content not necessarily.
+func (m *MultiQueue) GetDebugContent() map[string][]string {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	debugMap := map[string][]string{}
+
+	for sortedQueueKey := range m.SortedQueues {
+		sqSlice := []string{}
+		for i, sortedEntity := range m.SortedQueues[sortedQueueKey].Entities {
+			out, err := json.Marshal(sortedEntity.Entity)
+			if err != nil {
+				sqSlice = append(sqSlice, strconv.Itoa(i))
+			}
+			sqSlice = append(sqSlice, string(out))
+		}
+		debugMap[sortedQueueKey] = sqSlice
+	}
+
+	return debugMap
 }
 
 // getSortingPropertyValue checks if the required property to sort the Entity exists.
